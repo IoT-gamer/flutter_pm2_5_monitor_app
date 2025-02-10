@@ -1,3 +1,4 @@
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -12,6 +13,7 @@ const String serviceUUID = "91bad492-b950-4226-aa2b-4ede9fa42f59";
 const String pm1_0CharUUID = "91bad493-b950-4226-aa2b-4ede9fa42f59";
 const String pm2_5CharUUID = "91bad494-b950-4226-aa2b-4ede9fa42f59";
 const String pm10CharUUID = "91bad495-b950-4226-aa2b-4ede9fa42f59";
+const String historyCharUUID = "91bad496-b950-4226-aa2b-4ede9fa42f59";
 
 void main() {
   runApp(
@@ -44,6 +46,8 @@ class PMSensorState extends ChangeNotifier {
   int pm1_0 = 0;
   int pm2_5 = 0;
   int pm10 = 0;
+  List<HistoricalReading> historicalData = [];
+  bool isLoadingHistory = false;
 
   void updateReadings({int? pm1_0, int? pm2_5, int? pm10}) {
     if (pm1_0 != null) this.pm1_0 = pm1_0;
@@ -56,6 +60,150 @@ class PMSensorState extends ChangeNotifier {
     this.device = device;
     isConnected = device != null;
     notifyListeners();
+  }
+
+  void updateHistoricalData(List<HistoricalReading> data) {
+    historicalData = data;
+    notifyListeners();
+  }
+}
+
+// Historical reading model
+class HistoricalReading {
+  final DateTime timestamp;
+  final int pm1_0;
+  final int pm2_5;
+  final int pm10;
+
+  HistoricalReading({
+    required this.timestamp,
+    required this.pm1_0,
+    required this.pm2_5,
+    required this.pm10,
+  });
+
+  factory HistoricalReading.fromString(String data) {
+    final parts = data.split(',');
+    return HistoricalReading(
+      timestamp:
+          DateTime.fromMillisecondsSinceEpoch(int.parse(parts[0]) * 1000),
+      pm1_0: int.parse(parts[1]),
+      pm2_5: int.parse(parts[2]),
+      pm10: int.parse(parts[3]),
+    );
+  }
+}
+
+// Historical Data Screen
+class HistoricalDataScreen extends StatelessWidget {
+  const HistoricalDataScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Historical Data'),
+      ),
+      body: Consumer<PMSensorState>(
+        builder: (context, state, child) {
+          if (state.isLoadingHistory) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          if (state.historicalData.isEmpty) {
+            return const Center(child: Text('No historical data available'));
+          }
+
+          return SingleChildScrollView(
+            child: Column(
+              children: [
+                SizedBox(
+                  height: 300,
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: LineChart(
+                      LineChartData(
+                        gridData: FlGridData(show: true),
+                        titlesData: FlTitlesData(
+                          bottomTitles: AxisTitles(
+                            sideTitles: SideTitles(
+                              showTitles: true,
+                              getTitlesWidget: (value, meta) {
+                                if (value.toInt() >= 0 &&
+                                    value.toInt() <
+                                        state.historicalData.length) {
+                                  return Padding(
+                                    padding: const EdgeInsets.all(4.0),
+                                    child: Text(
+                                      '${state.historicalData[value.toInt()].timestamp.hour}:00',
+                                      style: const TextStyle(fontSize: 10),
+                                    ),
+                                  );
+                                }
+                                return const Text('');
+                              },
+                            ),
+                          ),
+                          leftTitles: AxisTitles(
+                            sideTitles: SideTitles(
+                              showTitles: true,
+                              reservedSize: 40,
+                            ),
+                          ),
+                          topTitles: AxisTitles(
+                            sideTitles: SideTitles(showTitles: false),
+                          ),
+                          rightTitles: AxisTitles(
+                            sideTitles: SideTitles(showTitles: false),
+                          ),
+                        ),
+                        lineBarsData: [
+                          LineChartBarData(
+                            spots:
+                                state.historicalData.asMap().entries.map((e) {
+                              return FlSpot(
+                                  e.key.toDouble(), e.value.pm2_5.toDouble());
+                            }).toList(),
+                            isCurved: true,
+                            color: Colors.blue,
+                            dotData: FlDotData(show: false),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const Padding(
+                  padding: EdgeInsets.all(16.0),
+                  child: Text(
+                    'Hourly PM2.5 Readings (µg/m³)',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                ListView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: state.historicalData.length,
+                  itemBuilder: (context, index) {
+                    final reading = state.historicalData[index];
+                    return ListTile(
+                      title: Text(
+                        'Time: ${reading.timestamp.hour}:00',
+                      ),
+                      subtitle: Text(
+                        'PM1.0: ${reading.pm1_0} µg/m³\n'
+                        'PM2.5: ${reading.pm2_5} µg/m³\n'
+                        'PM10: ${reading.pm10} µg/m³',
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
   }
 }
 
@@ -140,6 +288,33 @@ class HomePageState extends State<HomePage> {
     });
   }
 
+  Future<void> _fetchHistoricalData(BluetoothService service) async {
+    final state = Provider.of<PMSensorState>(context, listen: false);
+    state.isLoadingHistory = true;
+
+    try {
+      final characteristic = service.characteristics
+          .firstWhere((c) => c.uuid.toString() == historyCharUUID);
+
+      final value = await characteristic.read();
+      final String historyStr = String.fromCharCodes(value);
+
+      final readings = historyStr
+          .split('\n')
+          .where((line) => line.isNotEmpty)
+          .map((line) => HistoricalReading.fromString(line))
+          .toList();
+
+      state.updateHistoricalData(readings);
+    } catch (e) {
+      if (mounted) {
+        _showError('Failed to fetch historical data: ${e.toString()}');
+      }
+    } finally {
+      state.isLoadingHistory = false;
+    }
+  }
+
   Future<void> _connect(BluetoothDevice device) async {
     final state = Provider.of<PMSensorState>(context, listen: false);
 
@@ -178,6 +353,8 @@ class HomePageState extends State<HomePage> {
               }
             });
           }
+          // Fetch historical data
+          await _fetchHistoricalData(service);
         }
       }
     } catch (e) {
@@ -240,6 +417,18 @@ class HomePageState extends State<HomePage> {
                 _buildReadingCard('PM 2.5', state.pm2_5),
                 const SizedBox(height: 16),
                 _buildReadingCard('PM 10', state.pm10),
+                const SizedBox(height: 24),
+                ElevatedButton(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const HistoricalDataScreen(),
+                      ),
+                    );
+                  },
+                  child: const Text('View Historical Data'),
+                ),
               ],
             ),
           );
