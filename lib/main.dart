@@ -73,13 +73,13 @@ class PMSensorState extends ChangeNotifier {
 
 // Historical reading model
 class HistoricalReading {
-  final DateTime timestamp;
+  final TimeOfDay timeOfDay;
   final int pm1_0;
   final int pm2_5;
   final int pm10;
 
   HistoricalReading({
-    required this.timestamp,
+    required this.timeOfDay,
     required this.pm1_0,
     required this.pm2_5,
     required this.pm10,
@@ -87,9 +87,15 @@ class HistoricalReading {
 
   factory HistoricalReading.fromString(String data) {
     final parts = data.split(',');
+    if (parts.length < 4) throw FormatException('Invalid data format');
+
+    // Parse HH:MM format
+    final timeParts = parts[0].split(':');
+    final timeOfDay = TimeOfDay(
+        hour: int.parse(timeParts[0]), minute: int.parse(timeParts[1]));
+
     return HistoricalReading(
-      timestamp:
-          DateTime.fromMillisecondsSinceEpoch(int.parse(parts[0]) * 1000),
+      timeOfDay: timeOfDay,
       pm1_0: int.parse(parts[1]),
       pm2_5: int.parse(parts[2]),
       pm10: int.parse(parts[3]),
@@ -138,7 +144,7 @@ class HistoricalDataScreen extends StatelessWidget {
                                   return Padding(
                                     padding: const EdgeInsets.all(4.0),
                                     child: Text(
-                                      '${state.historicalData[value.toInt()].timestamp.hour}:00',
+                                      '${state.historicalData[value.toInt()].timeOfDay.hour}:${state.historicalData[value.toInt()].timeOfDay.minute.toString().padLeft(2, '0')}',
                                       style: const TextStyle(fontSize: 10),
                                     ),
                                   );
@@ -191,7 +197,7 @@ class HistoricalDataScreen extends StatelessWidget {
                     final reading = state.historicalData[index];
                     return ListTile(
                       title: Text(
-                        'Time: ${reading.timestamp.hour}:00',
+                        'Time: ${reading.timeOfDay.format(context)}',
                       ),
                       subtitle: Text(
                         'PM1.0: ${reading.pm1_0} µg/m³\n'
