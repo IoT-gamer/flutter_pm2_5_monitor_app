@@ -11,6 +11,8 @@ A Flutter mobile application that connects to a PM2.5 sensor via Bluetooth Low E
 - Clean Material Design 3 UI
 - Permission handling for BLE and location services
 - State management using Provider
+- Read and plot historical data from the sensor
+- Sync time with the sensor
 
 ## Platform Support
 | Android |  iOS  | MacOS |  Web  | Linux | Windows |
@@ -51,9 +53,11 @@ The app looks for a BLE device with the following specifications:
 - Device Name: "PM2.5 Sensor"
 - Service UUID: "91bad492-b950-4226-aa2b-4ede9fa42f59"
 - Characteristics:
-  - PM1.0: "91bad493-b950-4226-aa2b-4ede9fa42f59"
-  - PM2.5: "91bad494-b950-4226-aa2b-4ede9fa42f59"
-  - PM10: "91bad495-b950-4226-aa2b-4ede9fa42f59"
+  - PM1.0: `91bad493-b950-4226-aa2b-4ede9fa42f59` (Read, Notify)
+  - PM2.5: `91bad494-b950-4226-aa2b-4ede9fa42f59` (Read, Notify)
+  - PM10: `91bad495-b950-4226-aa2b-4ede9fa42f59` (Read, Notify)
+  - History: `91bad496-b950-4226-aa2b-4ede9fa42f59` (Read)
+  - Time Sync: `91bad497-b950-4226-aa2b-4ede9fa42f59` (Write)
 
 ## Usage
 
@@ -61,7 +65,10 @@ The app looks for a BLE device with the following specifications:
 2. Launch the app
 3. Grant necessary permissions when prompted
 4. Press "Scan for Sensor" to find and connect to your PM2.5 sensor
-5. Once connected, the app will display real-time readings for PM1.0, PM2.5, and PM10
+5. Once connected:
+    - The app will display real-time readings for PM1.0, PM2.5, and PM10. 
+    - Time will sync with the sensor. 
+    - You can also view historical data by pressing the "View Historical Data" button.
 
 ## License
 

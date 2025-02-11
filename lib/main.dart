@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
@@ -14,6 +16,7 @@ const String pm1_0CharUUID = "91bad493-b950-4226-aa2b-4ede9fa42f59";
 const String pm2_5CharUUID = "91bad494-b950-4226-aa2b-4ede9fa42f59";
 const String pm10CharUUID = "91bad495-b950-4226-aa2b-4ede9fa42f59";
 const String historyCharUUID = "91bad496-b950-4226-aa2b-4ede9fa42f59";
+const String timeSyncCharUUID = "91bad497-b950-4226-aa2b-4ede9fa42f59";
 
 void main() {
   runApp(
@@ -315,6 +318,28 @@ class HomePageState extends State<HomePage> {
     }
   }
 
+  Future<void> _syncTime(BluetoothService service) async {
+    try {
+      final characteristic = service.characteristics
+          .firstWhere((c) => c.uuid.toString() == timeSyncCharUUID);
+
+      // Convert local time to Unix timestamp and add timezone offset
+      final now = DateTime.now();
+      final timestamp =
+          (now.millisecondsSinceEpoch ~/ 1000) + now.timeZoneOffset.inSeconds;
+
+      final bytes = Uint8List(8);
+      final byteData = ByteData.view(bytes.buffer);
+      byteData.setUint64(0, timestamp, Endian.little);
+
+      await characteristic.write(bytes);
+    } catch (e) {
+      if (mounted) {
+        _showError('Failed to sync time: ${e.toString()}');
+      }
+    }
+  }
+
   Future<void> _connect(BluetoothDevice device) async {
     final state = Provider.of<PMSensorState>(context, listen: false);
 
@@ -330,28 +355,34 @@ class HomePageState extends State<HomePage> {
       // Find our service
       for (BluetoothService service in services) {
         if (service.uuid.toString() == serviceUUID) {
+          // First sync the time
+          await _syncTime(service);
+
           // Set up notifications for each characteristic
           for (BluetoothCharacteristic characteristic
               in service.characteristics) {
-            await characteristic.setNotifyValue(true);
-            if (!mounted) return;
-            characteristic.onValueReceived.listen((value) {
-              if (value.isNotEmpty) {
-                int reading = value[0];
+            if ([pm1_0CharUUID, pm2_5CharUUID, pm10CharUUID]
+                .contains(characteristic.uuid.toString())) {
+              await characteristic.setNotifyValue(true);
+              if (!mounted) return;
+              characteristic.onValueReceived.listen((value) {
+                if (value.isNotEmpty) {
+                  int reading = value[0];
 
-                switch (characteristic.uuid.toString()) {
-                  case pm1_0CharUUID:
-                    state.updateReadings(pm1_0: reading);
-                    break;
-                  case pm2_5CharUUID:
-                    state.updateReadings(pm2_5: reading);
-                    break;
-                  case pm10CharUUID:
-                    state.updateReadings(pm10: reading);
-                    break;
+                  switch (characteristic.uuid.toString()) {
+                    case pm1_0CharUUID:
+                      state.updateReadings(pm1_0: reading);
+                      break;
+                    case pm2_5CharUUID:
+                      state.updateReadings(pm2_5: reading);
+                      break;
+                    case pm10CharUUID:
+                      state.updateReadings(pm10: reading);
+                      break;
+                  }
                 }
-              }
-            });
+              });
+            }
           }
           // Fetch historical data
           await _fetchHistoricalData(service);
